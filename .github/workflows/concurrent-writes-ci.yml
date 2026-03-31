@@ -7,6 +7,9 @@ name: ladybug concurrent-writes CI
 #   - Benchmark comparison → PR comment + GitHub Step Summary
 
 on:
+  push:
+    branches:
+      - test/concurrent-writes-ci   # temporary: remove before merging
   schedule:
     - cron: '0 2 * * *'  # 02:00 UTC nightly on feat/concurrent-writes
   workflow_dispatch:       # allow manual trigger any time
@@ -235,15 +238,14 @@ jobs:
 
       - name: Compare branch vs main (same runner)
         id: compare
+        # compare_benchmarks.py writes directly to $GITHUB_STEP_SUMMARY and
+        # exits non-zero on regression — no separate append step needed.
+        continue-on-error: true
         run: |
           python3 benchmarks/compare_benchmarks.py \
             --baseline benchmarks/ci-baseline.json \
-            --branch   benchmarks/branch-results.json \
-            --output   benchmarks/comparison.md
+            --branch   benchmarks/branch-results.json
           echo "has_baseline=true" >> "$GITHUB_OUTPUT"
-
-      - name: Write benchmark comparison to Step Summary
-        run: cat benchmarks/comparison.md >> $GITHUB_STEP_SUMMARY
 
       - name: Generate history report
         if: always()
@@ -253,10 +255,8 @@ jobs:
             --output benchmarks/results/report.md 2>/dev/null || true
 
       - name: Fail CI if regressions detected
-        run: |
-          python3 benchmarks/compare_benchmarks.py \
-            --baseline benchmarks/ci-baseline.json \
-            --branch   benchmarks/branch-results.json
+        if: steps.compare.outcome == 'failure'
+        run: exit 1
 
       - name: Upload benchmark artifacts
         if: always()
@@ -266,6 +266,5 @@ jobs:
           path: |
             benchmarks/ci-baseline.json
             benchmarks/branch-results.json
-            benchmarks/comparison.md
             benchmarks/results/
           retention-days: 30
